@@ -11,8 +11,8 @@ from statsmodels.tsa.stattools import adfuller
 
 def load_data(filepath):
     loaded_data = pd.read_csv(filepath)
-    # data.head()
-    # data.info()
+    loaded_data.head()
+    loaded_data.info()
     return loaded_data
 
 
