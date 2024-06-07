@@ -80,6 +80,7 @@ def plot_predictions(data, train_predict, test_predict, future_data, scaler, tim
     plt.xticks(rotation=45)
     plt.tight_layout()
 
+    # TODO : 입력받은 시간까지 예측시간 출력하도록 수정
     # 현재 시간으로 파일 이름 생성
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_dir = os.path.join("sources/predict", nodeid)
