@@ -1,0 +1,4 @@
+Model saved on: 2024-06-07 21:02:51.843242
+Train RMSE: 0.69
+Test RMSE: 0.58
+Model path: sources/model/1830000100/model.h5

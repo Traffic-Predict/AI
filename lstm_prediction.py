@@ -5,22 +5,40 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.callbacks import ModelCheckpoint
+from sklearn.metrics import mean_squared_error
 import os
+from datetime import datetime
+import math
+import time
+from termcolor import colored
 
+def print_step(message):
+    print(colored(message, 'yellow'))
 
+# 단계별 실행 시간을 측정하기 위한 데코레이터
+def timed_step(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print_step(f"{func.__name__} 실행 시간: {end_time - start_time:.2f}초")
+        return result
+    return wrapper
+
+@timed_step
 def load_processed_data(directory, nodeid):
     filepath = os.path.join(directory, f'{nodeid}', f'{nodeid}.csv')
-    print(f"Trying to load data from: {filepath}")  # 파일 경로 출력
+    print_step(f"Trying to load data from: {filepath}")  # 파일 경로 출력
     if os.path.exists(filepath):
         data = pd.read_csv(filepath, parse_dates=['datetime'])
-        print("Data loaded successfully.")
+        print_step("Data loaded successfully.")
         print(data.head())  # 데이터프레임 구조 출력
         print(data.columns)  # 데이터프레임의 열 이름 출력
         return data
     else:
         raise FileNotFoundError(f"No processed data found for nodeid {nodeid} in {directory}")
 
-
+@timed_step
 def create_dataset(data, time_step=1):
     dataX, dataY = [], []
     for i in range(len(data) - time_step - 1):
@@ -29,7 +47,7 @@ def create_dataset(data, time_step=1):
         dataY.append(data[i + time_step, 0])
     return np.array(dataX), np.array(dataY)
 
-
+@timed_step
 def plot_predictions(data, train_predict, test_predict, scaler, time_step):
     # 인덱스 설정
     data.set_index('datetime', inplace=True)
@@ -58,6 +76,9 @@ def plot_predictions(data, train_predict, test_predict, scaler, time_step):
     plt.tight_layout()
     plt.show()
 
+@timed_step
+def calculate_rmse(actual, predicted):
+    return math.sqrt(mean_squared_error(actual, predicted))
 
 def main():
     directory = "sources/processed"
@@ -72,55 +93,55 @@ def main():
         if 'datetime' not in data.columns:
             raise KeyError("The 'datetime' column is not found in the data.")
 
-        # Set the datetime column as index
+        # datetime 열을 인덱스로 설정
         data.set_index('datetime', inplace=True)
 
-        # Normalize the data
+        # 데이터 정규화
         scaler = MinMaxScaler(feature_range=(0, 1))
         data['speed'] = scaler.fit_transform(data[['speed']])
 
-        # Convert data to numpy array
+        # 데이터를 numpy 배열로 변환
         data_values = data['speed'].values
         data_values = data_values.reshape(-1, 1)
 
-        # Create dataset for LSTM
+        # LSTM을 위한 데이터셋 생성
         time_step = 10
         X, y = create_dataset(data_values, time_step)
 
-        # Split into train and test sets
+        # 훈련 및 테스트 세트로 분리
         train_size = int(len(X) * 0.8)
         test_size = len(X) - train_size
         X_train, X_test = X[0:train_size], X[train_size:len(X)]
         y_train, y_test = y[0:train_size], y[train_size:len(y)]
 
-        # Reshape input to be [samples, time steps, features] which is required for LSTM
+        # 입력을 [samples, time steps, features] 형식으로 reshape
         X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
         X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
 
-        # Create the checkpoint directory if it doesn't exist
+        # 체크포인트 디렉토리가 없으면 생성
         checkpoint_path = os.path.join(checkpoint_dir, nodeid)
         if not os.path.exists(checkpoint_path):
             os.makedirs(checkpoint_path)
 
-        # Create the model directory if it doesn't exist
+        # 모델 디렉토리가 없으면 생성
         model_path = os.path.join(model_dir, nodeid)
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
-        # Check if there is a saved model
+        # 저장된 모델이 있는지 확인
         checkpoint_model_path = os.path.join(checkpoint_path, "model.keras")
         if os.path.exists(checkpoint_model_path):
             model = load_model(checkpoint_model_path)
-            print("Loaded model from checkpoint.")
+            print_step("Loaded model from checkpoint.")
         else:
-            # Create the LSTM model
+            # LSTM 모델 생성
             model = Sequential()
             model.add(LSTM(50, return_sequences=True, input_shape=(time_step, 1)))
             model.add(LSTM(50, return_sequences=False))
             model.add(Dense(1))
             model.compile(optimizer='adam', loss='mean_squared_error')
 
-        # Model checkpoint callback
+        # 모델 체크포인트 콜백
         checkpoint_callback = ModelCheckpoint(
             filepath=checkpoint_model_path,
             save_weights_only=False,
@@ -129,31 +150,46 @@ def main():
             verbose=1
         )
 
-        # Train the model
+        # 모델 학습
         model.fit(X_train, y_train, batch_size=1, epochs=1, callbacks=[checkpoint_callback])
 
-        # Save the final model
+        # 최종 모델 저장
         final_model_path = os.path.join(model_path, "model.h5")
         model.save(final_model_path)
-        print(f"Final model saved to {final_model_path}")
+        print_step(f"Final model saved to {final_model_path}")
 
-        # Make predictions
+        # 예측 수행
         train_predict = model.predict(X_train)
         test_predict = model.predict(X_test)
 
-        # Invert predictions back to original scale
+        # 예측값을 원래 스케일로 복원
         train_predict = scaler.inverse_transform(train_predict)
         y_train = scaler.inverse_transform([y_train])
         test_predict = scaler.inverse_transform(test_predict)
         y_test = scaler.inverse_transform([y_test])
 
-        # Plot the results
+        # RMSE 계산
+        train_rmse = calculate_rmse(y_train[0], train_predict[:, 0])
+        test_rmse = calculate_rmse(y_test[0], test_predict[:, 0])
+        print_step(f"Train RMSE: {train_rmse:.2f}")
+        print_step(f"Test RMSE: {test_rmse:.2f}")
+
+        # RMSE 및 모델 정보를 텍스트 파일로 저장
+        info_text_path = os.path.join(model_path, "model_info.txt")
+        with open(info_text_path, "w") as file:
+            file.write(f"Model saved on: {datetime.now()}\n")
+            file.write(f"Train RMSE: {train_rmse:.2f}\n")
+            file.write(f"Test RMSE: {test_rmse:.2f}\n")
+            file.write(f"Model path: {final_model_path}\n")
+        print_step(f"Model information saved to {info_text_path}")
+
+        # 결과 그래프 그리기
         plot_predictions(data, train_predict, test_predict, scaler, time_step)
 
     except FileNotFoundError as e:
-        print(e)
+        print_step(e)
     except KeyError as e:
-        print(e)
+        print_step(e)
 
 
 if __name__ == "__main__":
