@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore")
 if __name__ == "__main__":
 
     #Loading Data
-    data = pd.read_csv("traffic.csv")
+    data = pd.read_csv("../traffic.csv")
     data.head()
     data.info()
 

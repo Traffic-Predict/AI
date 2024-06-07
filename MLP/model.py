@@ -1,12 +1,10 @@
 # model.py
 
-import tensorflow
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import GRU, Dropout, Dense
 from tensorflow.keras.optimizers import SGD
 from keras import callbacks
 from sklearn.metrics import mean_squared_error
-import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 import math
@@ -14,8 +12,8 @@ import subprocess
 # Normalized data 불러 오기
 # feature_data.append([x_train_j, y_train_j, x_test_j, y_test_j])
 # [x학습 데이터, y학습 데이터, x테스트 데이터, y테스트 데이터]가 리스트로 연결되어 있음
-from data_preprocessing import normalized_data
-from data_preprocessing import colors
+from MLP.data_preprocessing import normalized_data
+from MLP.data_preprocessing import colors
 
 
 def GRU_model(X_Train, y_Train, X_Test, save=True):

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import load_model
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def load_processed_data(directory, nodeid):
@@ -28,7 +28,27 @@ def create_dataset(data, time_step=1):
     return np.array(dataX), np.array(dataY)
 
 
-def plot_predictions(data, train_predict, test_predict, scaler, time_step, nodeid):
+def prepare_future_data(last_known_datetime, future_datetime, freq='5T'):
+    steps = int((future_datetime - last_known_datetime) / timedelta(minutes=5))
+    future_dates = [last_known_datetime + timedelta(minutes=5 * i) for i in range(1, steps + 1)]
+    return pd.DataFrame({'datetime': future_dates})
+
+
+def predict_future_speed(model, data, future_data, scaler, time_step=10):
+    last_data = data[-time_step:].values
+    future_predictions = []
+
+    for _ in range(len(future_data)):
+        input_data = last_data.reshape((1, time_step, 1))
+        predicted_speed = model.predict(input_data)
+        future_predictions.append(predicted_speed[0, 0])
+        last_data = np.append(last_data[1:], predicted_speed[0, 0])
+
+    future_data['predicted_speed'] = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
+    return future_data
+
+
+def plot_predictions(data, train_predict, test_predict, future_data, scaler, time_step, nodeid):
     data_values = data['speed'].values.reshape(-1, 1)
 
     print(f"train_predict shape: {train_predict.shape}")
@@ -51,6 +71,7 @@ def plot_predictions(data, train_predict, test_predict, scaler, time_step, nodei
     plt.plot(data.index, scaler.inverse_transform(data_values), label='True Data')
     plt.plot(data.index, train_predict_plot, label='Train Predictions')
     plt.plot(data.index, test_predict_plot, label='Test Predictions')
+    plt.plot(future_data['datetime'], future_data['predicted_speed'], label='Future Predictions', linestyle='--')
     plt.title('Speed Prediction Using LSTM')
     plt.xlabel('Datetime')
     plt.ylabel('Speed')
@@ -74,6 +95,8 @@ def main():
     processed_dir = "sources/processed"
     model_dir = "sources/model"
     nodeid = input("Enter nodeid: ")
+    future_datetime_str = input("Enter future datetime (YYYY-MM-DD HH:MM): ")
+    future_datetime = datetime.strptime(future_datetime_str, "%Y-%m-%d %H:%M")
 
     try:
         data = load_processed_data(processed_dir, nodeid)
@@ -89,7 +112,8 @@ def main():
             data['speed'].fillna(method='ffill', inplace=True)
         if not np.isfinite(data['speed']).all():
             print("Data contains non-finite values. Replacing non-finite values with the previous valid value.")
-            data['speed'].replace([np.inf, -np.inf], method='ffill', inplace=True)
+            data['speed'].replace([np.inf, -np.inf], np.nan, inplace=True)
+            data['speed'].fillna(method='ffill', inplace=True)
 
         scaler = MinMaxScaler(feature_range=(0, 1))
         data['speed'] = scaler.fit_transform(data[['speed']])
@@ -137,10 +161,26 @@ def main():
         test_predict_indices = data.iloc[
                                len(train_predict) + (time_step * 2):len(train_predict) + (time_step * 2) + len(
                                    test_predict)].index
+        if len(test_predict_indices) != len(test_predict):
+            print(f"Length mismatch: {len(test_predict_indices)} indices, {len(test_predict)} predictions")
+            test_predict = test_predict[:len(test_predict_indices)]
         data.loc[test_predict_indices, 'test_predict'] = test_predict[:, 0]
 
+        # 미래 데이터 예측
+        last_known_datetime = data.index[-1]
+        future_data = prepare_future_data(last_known_datetime, future_datetime)  # 미래 시간까지 예측
+        future_predictions = predict_future_speed(model, data['speed'], future_data, scaler, time_step)
+
+        # 결과 출력
+        target_prediction = future_predictions.loc[future_predictions['datetime'] == future_datetime]
+        if not target_prediction.empty:
+            predicted_speed = target_prediction['predicted_speed'].values[0]
+            print(f"Predicted speed for {future_datetime} is {predicted_speed:.2f} km/h")
+        else:
+            print(f"No prediction available for {future_datetime}")
+
         # 실제 데이터와 예측 데이터를 비교하는 그래프를 저장
-        plot_predictions(data, train_predict, test_predict, scaler, time_step, nodeid)
+        plot_predictions(data, train_predict, test_predict, future_predictions, scaler, time_step, nodeid)
 
     except FileNotFoundError as e:
         print(e)

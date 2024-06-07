@@ -179,7 +179,7 @@ def featurefixshape(train, test):
 # 메인 함수
 if __name__ == "__main__":
     colors = ["#FFD4DB", "#BBE7FE", "#D3B5E5", "#dfe2b6"]
-    file_path = "traffic.csv"
+    file_path = "../traffic.csv"
     print('\033[38;5;208m' + f"Loading {file_path}" + '\033[0m')
     raw_data = load_data(file_path)
     print('\033[38;5;208m' + f"load data is completed" + '\033[0m')
